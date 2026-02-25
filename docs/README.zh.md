@@ -110,7 +110,7 @@ pip install -r requirements.txt
 - 模型权重已随仓库提供（位于 `checkpoints/` 目录），使用 Git LFS 管理。
 ```bash
   git lfs install
-  git clone https://github.com/sawakage/jpeg_qf_predictor.git
+  git clone https://github.com/sawakage/jpeg-qf-predictor.git
   cd jpeg_qf_predictor
   git lfs pull
 ```
