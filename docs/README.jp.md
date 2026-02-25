@@ -110,7 +110,7 @@ pip install -r requirements.txt
 ```bash
   git lfs install
   git clone https://github.com/sawakage/jpeg-qf-predictor.git
-  cd jpeg_qf_predictor
+  cd jpeg-qf-predictor
   git lfs pull
 ```
 ---
