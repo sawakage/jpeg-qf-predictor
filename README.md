@@ -109,7 +109,7 @@ pip install -r requirements.txt
 - Model weights are included in the repository (under `checkpoints/`) and managed with Git LFS.
 ```bash
   git lfs install
-  git clone https://github.com/sawakage/jpeg_qf_predictor.git
+  git clone https://github.com/sawakage/jpeg-qf-predictor.git
   cd jpeg_qf_predictor
   git lfs pull
 ```
