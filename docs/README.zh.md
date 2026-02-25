@@ -2,7 +2,7 @@
 
 # JPEG QF 预测 (回归)
 
-一个用于预测 JPEG 质量因子（QF, Quality Factor）的 **回归模型**推理工具。  
+用于**二次元**图像 JPEG 质量因子（QF, Quality Factor）预测的**回归模型**推理工具。
 
 ---
 
