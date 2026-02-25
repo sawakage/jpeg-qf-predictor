@@ -2,7 +2,7 @@
 
 # JPEG QF 予測（回帰）
 
-JPEG の品質係数（QF, Quality Factor）を予測する **回帰モデル** の推論ツールです。  
+二次元画像の JPEG 品質係数（QF, Quality Factor）を予測するための回帰モデル推論ツール。
 
 ---
 
