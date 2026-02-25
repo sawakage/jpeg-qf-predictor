@@ -109,7 +109,7 @@ pip install -r requirements.txt
 - モデル重みはリポジトリに同梱（`checkpoints/` 配下）されており、Git LFS で管理されています。
 ```bash
   git lfs install
-  git clone https://github.com/sawakage/jpeg_qf_predictor.git
+  git clone https://github.com/sawakage/jpeg-qf-predictor.git
   cd jpeg_qf_predictor
   git lfs pull
 ```
