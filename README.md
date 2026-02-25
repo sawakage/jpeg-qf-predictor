@@ -2,7 +2,7 @@
 
 # JPEG QF Prediction (Regression)
 
-An inference tool for a **regression model** that predicts the JPEG Quality Factor (QF).  
+A regression-model inference tool for predicting the JPEG Quality Factor (QF) of anime-style (2D) images.
 
 ---
 
