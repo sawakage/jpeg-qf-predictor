@@ -39,6 +39,7 @@ A regression-model inference tool for predicting the JPEG Quality Factor (QF) of
 - ✅ Pixel-limit skip option (avoid excessive resource usage on huge images)
 - ✅ Custom file suffix filtering (e.g. `.jpg .jpeg .jfif`)
 - ✅ Automatically appends timestamp if output file already exists (prevents overwrite)
+- ✅ Adapted to JPEG images compressed with various chroma subsampling schemes.
 
 ---
 
