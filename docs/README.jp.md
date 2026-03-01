@@ -106,14 +106,23 @@ pip install -r requirements.txt
 > `requirements.txt` にお使いの CUDA 環境と一致する PyTorch が含まれていない場合は、先に公式手順で PyTorch をインストールしてから、上記コマンドを実行してください。
 
 ### 3) モデル重みの準備
-- 推論スクリプトでは `--ckpt` で `.pth` 重みファイルを指定する必要があります。
-- モデル重みはリポジトリに同梱（`checkpoints/` 配下）されており、Git LFS で管理されています。
+- 推論スクリプトでは、`--ckpt` で `.pth` 重みファイルを指定する必要があります。
+- モデルの重みは GitHub Releases を通じて配布されており、Git LFS では管理されていません。
+
+#### 自動ダウンロード（推奨）
+提供されているダウンロードスクリプトを実行すると、現在の Git タグ（バージョン）を自動検出し、対応するモデルファイルを `checkpoints/` ディレクトリにダウンロードします。
 ```bash
-  git lfs install
-  git clone https://github.com/sawakage/jpeg-qf-predictor.git
-  cd jpeg-qf-predictor
-  git lfs pull
+# 依存関係のインストール（requests が未インストールの場合）
+pip install requests
+
+python scripts/download_model.py
 ```
+スクリプト実行後、モデルファイルは `checkpoints/model.pth` として保存されます。推論時には、デフォルトのパスを直接使用するか、`--ckpt` で指定することができます。
+
+#### 手動ダウンロード
+
+`Releases` ページから該当バージョンの `model.pth` ファイルを手動でダウンロードし、プロジェクトのルートディレクトリにある `checkpoints/` フォルダに配置することもできます（フォルダが存在しない場合は作成してください）。
+
 ---
 
 ## クイックスタート（単一画像モード）
