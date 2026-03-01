@@ -39,6 +39,7 @@ An inference tool for a **regression model** that predicts the JPEG Quality Fact
 - ✅ Pixel-limit skip option (avoid excessive resource usage on huge images)
 - ✅ Custom file suffix filtering (e.g. `.jpg .jpeg .jfif`)
 - ✅ Automatically appends timestamp if output file already exists (prevents overwrite)
+- ✅ Adapted to JPEG images compressed with various chroma subsampling schemes.
 
 ---
 
@@ -104,15 +105,25 @@ pip install -r requirements.txt
 
 > If your `requirements.txt` does not include a PyTorch build matching your local CUDA version, install PyTorch first using the official instructions, then run the command above.
 
-### 3) Prepare model weights
-- The inference script requires a `.pth` weights file specified via `--ckpt`.
-- Model weights are included in the repository (under `checkpoints/`) and managed with Git LFS.
+### 3) Prepare Model Weights
+- The inference script requires specifying the `.pth` weight file via `--ckpt`.
+- Model weights are distributed through GitHub Releases, no longer managed by Git LFS.
+
+#### Automatic Download (Recommended)
+Run the provided download script, which will automatically detect the current Git tag (version) and download the corresponding model file to the `checkpoints/` directory:
 ```bash
-  git lfs install
-  git clone https://github.com/sawakage/jpeg_qf_predictor.git
-  cd jpeg_qf_predictor
-  git lfs pull
+# Install dependency (if requests is not already installed)
+pip install requests
+
+python scripts/download_model.py
 ```
+
+After execution, the model file will be saved as `checkpoints/model.pth`. For inference, you can directly use the default path or specify it via `--ckpt`.
+
+#### Manual Download
+
+You can also manually download the `model.pth` file corresponding to your version from the `Releases` page and place it in the `checkpoints/` folder under the project root directory (create it if it does not exist).
+
 ---
 
 ## Quick Start (Single Image Mode)

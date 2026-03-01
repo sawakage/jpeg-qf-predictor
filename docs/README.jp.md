@@ -39,6 +39,7 @@ JPEG の品質係数（QF, Quality Factor）を予測する **回帰モデル** 
 - ✅ ピクセル上限によるスキップ機能（超大画像の過剰なリソース消費を回避）
 - ✅ カスタム拡張子フィルタ（例：`.jpg .jpeg .jfif`）
 - ✅ 出力先ファイルが既に存在する場合は自動でタイムスタンプを付与（上書き防止）
+- ✅ 異なる色差サブサンプリング方式で圧縮されたJPEG画像に対応する
 
 ---
 
@@ -105,14 +106,23 @@ pip install -r requirements.txt
 > `requirements.txt` にお使いの CUDA 環境と一致する PyTorch が含まれていない場合は、先に公式手順で PyTorch をインストールしてから、上記コマンドを実行してください。
 
 ### 3) モデル重みの準備
-- 推論スクリプトでは `--ckpt` で `.pth` 重みファイルを指定する必要があります。
-- モデル重みはリポジトリに同梱（`checkpoints/` 配下）されており、Git LFS で管理されています。
+- 推論スクリプトでは、`--ckpt` で `.pth` 重みファイルを指定する必要があります。
+- モデルの重みは GitHub Releases を通じて配布されており、Git LFS では管理されていません。
+
+#### 自動ダウンロード（推奨）
+提供されているダウンロードスクリプトを実行すると、現在の Git タグ（バージョン）を自動検出し、対応するモデルファイルを `checkpoints/` ディレクトリにダウンロードします。
 ```bash
-  git lfs install
-  git clone https://github.com/sawakage/jpeg_qf_predictor.git
-  cd jpeg_qf_predictor
-  git lfs pull
+# 依存関係のインストール（requests が未インストールの場合）
+pip install requests
+
+python scripts/download_model.py
 ```
+スクリプト実行後、モデルファイルは `checkpoints/model.pth` として保存されます。推論時には、デフォルトのパスを直接使用するか、`--ckpt` で指定することができます。
+
+#### 手動ダウンロード
+
+`Releases` ページから該当バージョンの `model.pth` ファイルを手動でダウンロードし、プロジェクトのルートディレクトリにある `checkpoints/` フォルダに配置することもできます（フォルダが存在しない場合は作成してください）。
+
 ---
 
 ## クイックスタート（単一画像モード）

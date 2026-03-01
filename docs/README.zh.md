@@ -40,6 +40,7 @@
 - ✅ 支持像素上限跳过（避免超大图导致资源占用过高）
 - ✅ 支持自定义文件后缀过滤（如 `.jpg .jpeg .jfif`）
 - ✅ 输出文件已存在时自动追加时间戳（避免覆盖）
+- ✅ 适配jpeg各种色度采样压缩下的图片
 
 ---
 
@@ -107,13 +108,23 @@ pip install -r requirements.txt
 
 ### 3) 准备模型权重
 - 推理脚本需要通过 `--ckpt` 指定 `.pth` 权重文件。
-- 模型权重已随仓库提供（位于 `checkpoints/` 目录），使用 Git LFS 管理。
+- 模型权重通过 GitHub Releases 分发，不再使用 Git LFS 管理。
+
+#### 自动下载（推荐）
+运行项目提供的下载脚本，它会自动检测当前 Git 标签（版本）并下载对应的模型文件到 `checkpoints/` 目录：
 ```bash
-  git lfs install
-  git clone https://github.com/sawakage/jpeg_qf_predictor.git
-  cd jpeg_qf_predictor
-  git lfs pull
+# 安装依赖（如果尚未安装 requests）
+pip install requests
+
+python scripts/download_model.py
 ```
+
+脚本执行后，模型文件将保存为 `checkpoints/model.pth`，推理时可直接使用默认路径或通过 `--ckpt` 指定。
+
+#### 手动下载
+
+你也可以从 `Releases` 页面手动下载对应版本的 `model.pth` 文件，并将其放置于项目根目录下的 `checkpoints/` 文件夹中（如不存在请自行创建）。
+
 ---
 
 ## 快速开始（单图模式）
