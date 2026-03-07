@@ -1,4 +1,4 @@
-> Language / 语言 / 言語: [English](../README.md) | [中文](./README.zh.md) | [日本語](./README.jp.md)
+> Language / 语言 / 言語: [English](../README.md) | [中文](./README.zh.md) | [日本語](./README.ja.md)
 
 # JPEG QF 预测 (回归)
 
@@ -14,12 +14,9 @@
 - [限制说明](#限制说明)
 - [项目结构](#项目结构)
 - [环境准备](#环境准备)
-- [快速开始（单图模式）](#快速开始单图模式)
 - [完整使用流程](#完整使用流程)
-- [命令行参数帮助信息](#命令行参数帮助信息)
 - [输出结果说明（CSV / DB 字段）](#输出结果说明csv--db-字段)
 - [推理流程说明（选块逻辑）](#推理流程说明选块逻辑)
-- [跳过与错误处理机制](#跳过与错误处理机制)
 - [许可证](#许可证)
 
 
@@ -27,16 +24,14 @@
 
 ## 功能特性
 
-- ✅ 单张 JPEG 图片推理
-- ✅ 文件夹批量推理
+- ✅ 单张 JPEG 图片与文件夹批量推理
 - ✅ 支持递归扫描子目录
 - ✅ 输出 `CSV` / `SQLite` / `CSV+SQLite`
 - ✅ 分离保存：
   - 成功预测结果（`predictions`）
   - 跳过/错误样本（`issues`）
 - ✅ 支持 TTA（翻转测试增强）
-- ✅ 支持 checkpoint 内置校准器（可开关）
-- ✅ 支持自动选择 `cuda/cpu`
+- ✅ 支持 checkpoint 校准器（可开关）
 - ✅ 支持像素上限跳过（避免超大图导致资源占用过高）
 - ✅ 支持自定义文件后缀过滤（如 `.jpg .jpeg .jfif`）
 - ✅ 输出文件已存在时自动追加时间戳（避免覆盖）
@@ -48,21 +43,21 @@
 
 测试集结果：
 
-- **测试集样本数：2763**
-- **MAE（校准后）：0.1541**
-- **Acc@1（校准后）：99.78%**
-- **Acc@2（校准后）：99.86%**
-- **Acc@5（校准后）：99.93%**
+- **测试集样本数：2759**
+- **MAE（校准后）：0.2322**
+- **Acc@1（校准后）：99.60%**
+- **Acc@2（校准后）：99.82%**
+- **Acc@5（校准后）：100.00%**
 
 ---
 
 ## 推理速度（实测）
 
-- **平均约 3 秒 / 张**（测试集推理实测）
-- 硬件平台（**笔记本平台**）：
-  - **CPU**: Intel i7-12700H
-  - **内存**: 16GB
-  - **GPU**: RTX 3060 Laptop GPU
+- **平均约 6.7 秒 / 张**（测试集推理实测）
+- 硬件平台：
+  - **CPU**: AMD Ryzen 7 9700X 8-Core Processor
+  - **内存**: 32GB DDR5 6000MT/s C30
+  - **GPU**: NVIDIA Tesla P40
 
 > 实际速度会受图片尺寸、是否开启 TTA、磁盘读写速度、系统负载等因素影响。
 
@@ -81,10 +76,10 @@
 ```text
 .
 ├── infer.py
-├── model.py
 ├── requirements.txt
 ├── checkpoints/
-│   └── model.pth
+│   └── model.onnx
+│   └── model.meta.json
 ├── demo/
 │   └── test.jpg
 ├── outputs/
@@ -94,58 +89,50 @@
 ---
 
 ## 环境准备
+本项目支持在 CPU、NVIDIA GPU 以及 AMD GPU 环境下运行。为了避免环境冲突，请严格按照以下步骤进行安装。
 
 ### 1) Python 环境
 建议使用 Python 3.9+。
 
-### 2) 安装依赖（使用 `requirements.txt`）
-
+### 2) 克隆项目并安装基础依赖
+首先，克隆仓库并安装与硬件无关的通用 Python 库：
 ```bash
+git clone https://github.com/sawakage/jpeg-qf-predictor.git
+cd jpeg-qf-predictor
 pip install -r requirements.txt
 ```
 
-> 如果你的 `requirements.txt` 未包含与你本机 CUDA 匹配的 PyTorch，请先按官方方式安装 PyTorch，再执行上面的命令。
-
-### 3) 准备模型权重
-- 推理脚本需要通过 `--ckpt` 指定 `.pth` 权重文件。
-- 模型权重通过 GitHub Releases 分发，不再使用 Git LFS 管理。
-
-#### 自动下载（推荐）
-运行项目提供的下载脚本，它会自动检测当前 Git 标签（版本）并下载对应的模型文件到 `checkpoints/` 目录：
+### 3) 安装深度学习核心库 (请根据你的硬件 3 选 1)
+ - 选项 A: 使用 NVIDIA GPU
 ```bash
-# 安装依赖（如果尚未安装 requests）
-pip install requests
+# 1. 安装 PyTorch (以 CUDA 11.8 为例，请根据实际情况调整)
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
 
-python scripts/download_model.py
+# 2. 安装 ONNX Runtime GPU 版
+pip install onnxruntime-gpu
 ```
-
-脚本执行后，模型文件将保存为 `checkpoints/model.pth`，推理时可直接使用默认路径或通过 `--ckpt` 指定。
-
-#### 手动下载
-
-你也可以从 `Releases` 页面手动下载对应版本的 `model.pth` 文件，并将其放置于项目根目录下的 `checkpoints/` 文件夹中（如不存在请自行创建）。
-
----
-
-## 快速开始（单图模式）
-
-可用于检测脚本是否能成功运行
-
+ - 选项 B: 使用纯 CPU
 ```bash
-python infer.py --ckpt ./checkpoints/model.pth --input ./demo/test.jpg
-```
+# 1. 安装 PyTorch CPU 版
+pip install torch torchvision
 
-如果成功，你会看到类似输出（单图模式）：
-
-```text
-===== 结果 / Result =====
-图片 / Image: ./demo/test.jpg
-最终QF / Final QF: 92.0000
-[+] 成功预测CSV / Predictions CSV: ./outputs/predictions.csv
-[+] 问题样本CSV / Issues CSV: ./outputs/issues.csv
-[*] 设备 / Device: cuda
-...
+# 2. 安装 ONNX Runtime 标准版
+pip install onnxruntime
 ```
+ - 选项 C: 使用 AMD GPU
+```bash
+# Windows 用户 (DirectML 加速):
+pip install torch torchvision
+pip install onnxruntime-directml
+
+# Linux 用户 (ROCm 架构，以 ROCm 5.6 为例):
+pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm5.6
+pip install onnxruntime-rocm
+```
+### 4) 准备模型权重
+- 推理脚本需要通过 `--ckpt` 指定 `.onnx` 权重文件和`.meta.json`权重文件。
+
+>确保onnx文件放置于项目根目录下的 `checkpoints/` 文件夹中（如不存在请自行创建）。
 
 ---
 
@@ -159,11 +146,11 @@ python infer.py --ckpt ./checkpoints/model.pth --input ./demo/test.jpg
 
 ### 1) 单张图片推理
 
-单图用法同快速开始
-
-适用场景：
-- 调试设备 / 路径 / 权限问题
-- 做小规模人工核对
+```bash
+python infer.py \
+  --ckpt ./checkpoints/model.onnx \
+  --input ./demo/test.jpg
+```
 
 ---
 
@@ -171,7 +158,7 @@ python infer.py --ckpt ./checkpoints/model.pth --input ./demo/test.jpg
 
 ```bash
 python infer.py \
-  --ckpt ./checkpoints/model.pth \
+  --ckpt ./checkpoints/model.onnx \
   --input ./data/images
 ```
 
@@ -191,7 +178,6 @@ python infer.py \
 
 适用场景：
 - 数据集目录层级较深
-- 图片按类别/来源分文件夹管理
 
 ---
 
@@ -230,7 +216,6 @@ python infer.py \
   --issue_csv ./outputs/issues.csv \
   --output_db ./outputs/results.db
 ```
-**输出路径参数为可选项**
 > 如果目标输出文件已存在，脚本会自动在文件名后追加时间戳，避免覆盖原文件。
 
 ---
@@ -244,7 +229,7 @@ python infer.py \
   --disable_tta
 ```
 
-#### 5.2 关闭校准器（若 checkpoint 含校准器）
+#### 5.2 关闭校准器
 
 ```bash
   --no_calibrator
@@ -254,9 +239,11 @@ python infer.py \
 
 - 自动选择（默认）：`--device auto`
 - 强制 CPU：`--device cpu`
-- 强制 CUDA：`--device cuda`
+- 强制 CUDA（Nvidia 显卡）：`--device cuda`
+- 强制 DirectML（Windows AMD 显卡）：`--device dml`
+- 强制 ROCm（Linux AMD 显卡）：`--device rocm`
 
-如果指定 `cuda` 但当前环境不可用，脚本会报错并退出（预期行为）。
+如果明确指定了 `cuda`、`dml` 或 `rocm`，但当前环境未安装对应的加速库（或硬件不可用），脚本会严格报错并退出。这可以避免程序在缺少环境时静默降级到 CPU 导致推理缓慢。
 
 ---
 
@@ -310,20 +297,6 @@ python infer.py \
 
 当你只关心结果文件，不希望终端输出过多信息时可使用 `--quiet`：
 
-静默模式下：
-- 会减少终端日志输出
-- 多图模式通常不显示进度条
-- 仍会正常写出 CSV / DB 结果
-
----
-
-## 命令行参数帮助信息
-
-可以直接运行以下命令查看脚本帮助信息：
-
-```bash
-python infer.py --help
-```
 ---
 
 ## 输出结果说明（CSV / DB 字段）
@@ -376,8 +349,8 @@ python infer.py --help
 
 当前脚本中的固定推理参数：
 
-- 图块大小：`128×128`
-- 步长：`128`
+- 图块大小：`64×64`
+- 步长：`64`
 - 每图最多使用图块数：`24`
 - 方差阈值：`15.0`
 - 宽松阈值：`15.0 / 1.5`
@@ -401,26 +374,6 @@ python infer.py --help
 
 - 模型对多个图块输出预测值
 - 脚本以**中位数**作为整图预测结果（更抗异常块）
-
----
-
-## 跳过与错误处理机制
-
-脚本不会因为单张图片失败就中断整个批处理流程，而是将问题记录到 `issues`，然后继续处理后续图片。
-
-### 常见跳过原因（`issue_type=skipped`）
-
-- 图片像素数超过上限（启用像素限制时）
-- 图片尺寸小于图块尺寸（`128×128`）
-- 图片内容信息量过少（选不到有效图块）
-
-### 常见错误（`issue_type=error`）
-
-- 文件损坏 / 截断 / 解码失败
-- 非法或不完整 JPEG
-- 权重与模型结构不匹配
-- 指定 `--device cuda` 但当前环境 CUDA 不可用
-- 输入单文件时后缀不在允许列表（此时会直接报错，不进入批处理）
 
 ## 许可证
 使用MIT许可证

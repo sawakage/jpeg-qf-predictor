@@ -10,11 +10,18 @@ import torch
 from PIL import Image, ImageOps
 from tqdm import tqdm
 
-from model import JPEGQFRegNet
+import json
+
+try:
+    import onnxruntime as ort
+except ImportError as e:
+    raise ImportError(
+        "onnxruntime is required for ONNX inference. Install via: pip install onnxruntime (CPU) or onnxruntime-gpu (CUDA)"
+    ) from e
 
 # 固定推理参数（与评估脚本一致） / Fixed inference params (same as eval script)
-BLOCK_SIZE = 128
-STEP = 128
+BLOCK_SIZE = 64
+STEP = 64
 BLOCKS_PER_IMAGE = 24
 VAR_THRESHOLD = 15.0
 RELAXED_VAR_THRESHOLD = VAR_THRESHOLD / 1.5
@@ -49,6 +56,125 @@ class PiecewiseLinearCalibrator:
         out = np.interp(pred, self.x, self.y)
         return np.clip(out, self.min_qf, self.max_qf).astype(np.float32)
 
+
+class OnnxModel:
+    def __init__(self, onnx_path: str, device: torch.device, req_dev: str = "auto"):    
+        self.onnx_path = str(onnx_path)
+        self.device = device
+        
+        available = set(ort.get_available_providers())
+        providers = ["CPUExecutionProvider"]
+        
+        if req_dev == "cuda":
+            if "CUDAExecutionProvider" not in available:
+                raise RuntimeError("未检测到 CUDA 支持！请检查是否安装了 onnxruntime-gpu / CUDA support not detected! Please check if onnxruntime-gpu is installed")
+            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        elif req_dev == "rocm":
+            if "ROCMExecutionProvider" not in available:
+                raise RuntimeError("未检测到 ROCm 支持！请检查是否安装了 onnxruntime-rocm / ROCm support not detected! Please check if onnxruntime-rocm is installed")
+            providers = ["ROCMExecutionProvider", "CPUExecutionProvider"]
+        elif req_dev == "dml":
+            if "DmlExecutionProvider" not in available:
+                raise RuntimeError("未检测到 DirectML 支持！请检查是否安装了 onnxruntime-directml / DirectML support not detected! Please check if onnxruntime-directml is installed")
+            providers = ["DmlExecutionProvider", "CPUExecutionProvider"]
+        elif req_dev == "cpu":
+            providers = ["CPUExecutionProvider"]
+        else:
+            if "CUDAExecutionProvider" in available:
+                providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+            elif "ROCMExecutionProvider" in available:
+                providers = ["ROCMExecutionProvider", "CPUExecutionProvider"]
+            elif "DmlExecutionProvider" in available:
+                providers = ["DmlExecutionProvider", "CPUExecutionProvider"]
+            
+        self.sess = ort.InferenceSession(self.onnx_path, providers=providers)
+        self.input_name = self.sess.get_inputs()[0].name
+        self.output_names = [o.name for o in self.sess.get_outputs()]
+    
+        active_eps = self.sess.get_providers()
+        self.is_cuda = "CUDAExecutionProvider" in active_eps
+        self.is_rocm = "ROCMExecutionProvider" in active_eps
+
+    def __call__(self, x):
+        if not (self.is_cuda or self.is_rocm) or not isinstance(x, torch.Tensor) or not x.is_cuda:
+            return self._forward_cpu_fallback(x)
+            
+        x = x.contiguous()
+        if x.dtype != torch.float32:
+            x = x.to(torch.float32)
+
+        io_binding = self.sess.io_binding()
+        device_id = x.device.index if x.device.index is not None else 0
+
+        ort_device_type = 'rocm' if self.is_rocm else 'cuda'
+
+        io_binding.bind_input(
+            name=self.input_name,
+            device_type=ort_device_type,
+            device_id=device_id,
+            element_type=np.float32,
+            shape=tuple(x.shape),
+            buffer_ptr=x.data_ptr()
+        )
+
+        out = {}
+        B = x.shape[0]
+        
+        for output_meta in self.sess.get_outputs():
+            name = output_meta.name
+            
+            shape = []
+            if output_meta.shape is not None:
+                for dim in output_meta.shape:
+                    if isinstance(dim, str) or dim is None:
+                        shape.append(B)
+                    else:
+                        shape.append(dim)
+            else:
+                shape = [B]
+
+            out_tensor = torch.empty(tuple(shape), dtype=torch.float32, device=x.device)
+            out[name] = out_tensor
+
+            io_binding.bind_output(
+                name=name,
+                device_type=ort_device_type,
+                device_id=device_id,
+                element_type=np.float32,
+                shape=tuple(shape),
+                buffer_ptr=out_tensor.data_ptr()
+            )
+
+        self.sess.run_with_iobinding(io_binding)
+        out_names = [o.name for o in self.sess.get_outputs()]
+        if "pred_qf" not in out and len(out_names) >= 1:
+            out["pred_qf"] = out[out_names[0]]
+        if "pred_sigma" not in out and len(out_names) >= 2:
+            out["pred_sigma"] = out[out_names[1]]
+
+        return out
+
+    def _forward_cpu_fallback(self, x):
+        if isinstance(x, torch.Tensor):
+            x_np = x.detach().cpu().numpy()
+        else:
+            x_np = np.asarray(x)
+
+        if x_np.dtype != np.float32:
+            x_np = x_np.astype(np.float32)
+
+        outs = self.sess.run(None, {self.input_name: x_np})
+
+        out = {}
+        for name, arr in zip(self.output_names, outs):
+            out[name] = torch.from_numpy(arr).to(self.device)
+
+        if "pred_qf" not in out and len(outs) >= 1:
+            out["pred_qf"] = torch.from_numpy(outs[0]).to(self.device)
+        if "pred_sigma" not in out and len(outs) >= 2:
+            out["pred_sigma"] = torch.from_numpy(outs[1]).to(self.device)
+
+        return out
 
 def rgb_variance_score(block):
     r = np.var(block[:, :, 0])
@@ -180,28 +306,33 @@ def _autocast_context(device: torch.device):
     return torch.autocast("cpu", enabled=False)
 
 
-def load_model_and_calibrator(ckpt_path: str, device: torch.device):
-    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-    model_cfg = ckpt.get("cfg", {})
+def load_model_and_calibrator(ckpt_path: str, device: torch.device, no_calibrator: bool = False, req_dev: str = "auto"):
+    onnx_path = Path(ckpt_path)
+    if onnx_path.suffix.lower() != ".onnx":
+        raise ValueError(f"仅支持输入ONNX文件 / Only .onnx is supported: {onnx_path}")
 
-    model = JPEGQFRegNet(
-        in_ch=model_cfg.get("in_ch", 4),
-        add_hp=model_cfg.get("add_hp", True),
-        add_lap=model_cfg.get("add_lap", True),
-        add_grid=model_cfg.get("add_grid", True),
-    ).to(device)
+    meta_path = onnx_path.with_suffix(".meta.json")
 
-    if "ema" in ckpt and ckpt["ema"] is not None:
-        model.load_state_dict(ckpt["ema"])
-        weight_type = "ema"
-    else:
-        model.load_state_dict(ckpt["model"])
-        weight_type = "model"
-    model.eval()
+    model = OnnxModel(str(onnx_path), device=device, req_dev=req_dev)
 
     calibrator = None
-    if "calibrator" in ckpt and ckpt["calibrator"] is not None:
-        calibrator = PiecewiseLinearCalibrator().load_state_dict(ckpt["calibrator"])
+    model_cfg = {}
+    weight_type = "onnx"
+
+    if not meta_path.exists():
+        if not no_calibrator:
+            raise FileNotFoundError(
+                f"缺少meta文件 / meta file not found: {meta_path}\n"
+                "提示：如果不需要校准器，请在命令中添加 --no_calibrator 参数跳过此检查。\n"
+                "Tip: If you do not need a calibrator, add the --no_calibrator parameter to the command to skip this check."
+            )
+    else:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        model_cfg = meta.get("cfg", {})
+        
+        if not no_calibrator and "calibrator" in meta and meta["calibrator"] is not None:
+            calibrator = PiecewiseLinearCalibrator().load_state_dict(meta["calibrator"])
+        weight_type = meta.get("weight_type", "onnx")
 
     return model, calibrator, model_cfg, weight_type
 
@@ -360,7 +491,7 @@ def write_outputs_db(pred_rows: List[Dict[str, Any]], issue_rows: List[Dict[str,
 
 def build_argparser():
     parser = argparse.ArgumentParser("JPEG QF 实用推理脚本 / JPEG QF Practical Inference")
-    parser.add_argument("--ckpt", type=str, required=True, help="模型权重路径(.pth) / Model checkpoint path (.pth)")
+    parser.add_argument("--ckpt", type=str, required=True, help="模型权重路径(.onnx) / Model checkpoint path (.onnx)")
     parser.add_argument("--input", type=str, required=True, help="输入图片或文件夹路径 / Input image path or folder path")
 
     parser.add_argument(
@@ -408,7 +539,7 @@ def build_argparser():
         default=[".jpg", ".jpeg", ".jpe", ".jfif"],
         help="允许的后缀名列表 / Allowed file suffixes",
     )
-    parser.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "cuda"], help="推理设备 / Inference device")
+    parser.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "cuda", "dml", "rocm"], help="推理设备 / Inference device")
     parser.add_argument("--quiet", action="store_true", help="减少终端输出 / Reduce terminal logs")
     return parser
 
@@ -428,12 +559,19 @@ def main():
 
     if args.device == "auto":
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    else:
-        device = torch.device(args.device)
-        if args.device == "cuda" and not torch.cuda.is_available():
-            raise RuntimeError("指定了 CUDA 但当前不可用 / CUDA is requested but not available")
+    elif args.device in ["dml", "cpu"]:
+        device = torch.device("cpu")
+    elif args.device in ["cuda", "rocm"]:
+        device = torch.device("cuda")
+        if not torch.cuda.is_available():
+            raise RuntimeError(f"指定了 {args.device}，但 PyTorch 未检测到对应的 GPU / {args.device} is requested but not available in PyTorch")
 
-    model, calibrator, model_cfg, weight_type = load_model_and_calibrator(args.ckpt, device)
+    model, calibrator, _, weight_type = load_model_and_calibrator(
+        args.ckpt, 
+        device, 
+        no_calibrator=args.no_calibrator,
+        req_dev=args.device
+    )
     use_calibrator = not args.no_calibrator
     has_calibrator = calibrator is not None
 
@@ -522,7 +660,6 @@ def main():
         print(f"[*] 校准器 / Calibrator: {'enabled' if (use_calibrator and has_calibrator) else 'disabled/fallback'}")
         print(f"[*] 像素上限 / Pixel limit: {'enabled' if args.enable_pixel_limit else 'disabled'}"
               f"{f', max={args.max_image_pixels}' if args.enable_pixel_limit else ''}")
-
 
 
 if __name__ == "__main__":
